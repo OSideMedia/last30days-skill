@@ -26,6 +26,9 @@ LOWERCASED_ATTR_HTML = """
 </shreddit-comment>
 """
 
+# The Scrapling fallback renders through a real browser, so it returns this shape.
+BROWSER_SHAPED_HTML = LOWERCASED_ATTR_HTML
+
 
 class TestExtractPostRef:
     def test_extracts_sub_and_id(self):
@@ -173,11 +176,49 @@ class TestFetchComments:
         assert out["top_comments"] == [] and out["num_comments"] is None
 
     def test_fetch_failure_returns_empty(self):
+        # Keyless HTTP fails AND Scrapling is unavailable (the CI/Cowork case):
+        # behaves exactly as before the fallback existed. is_available is forced
+        # False so the test is deterministic on a dev box where scrapling is on PATH.
         url = "https://www.reddit.com/r/Rakuten/comments/1taeiw0/title/"
-        with mock.patch.object(rs.http, "get_text", return_value=None):
+        with mock.patch.object(rs.http, "get_text", return_value=None), \
+                mock.patch.object(rs.scrapling_fetch, "is_available", return_value=False):
             out = rs.fetch_comments(url)
         assert out["top_comments"] == [] and out["num_comments"] is None
 
+    def test_scrapling_fallback_used_when_keyless_blocked(self):
+        # Keyless HTTP returns nothing (403'd); Scrapling is installed and its
+        # browser fetch returns the same (lowercased-attr) markup -> comments.
+        url = "https://www.reddit.com/r/videos/comments/1vjokkz/title/"
+        with mock.patch.object(rs.http, "reddit_keyless_get_text", return_value=None), \
+                mock.patch.object(rs.scrapling_fetch, "is_available", return_value=True), \
+                mock.patch.object(rs.scrapling_fetch, "fetch", return_value=BROWSER_SHAPED_HTML) as sf:
+            out = rs.fetch_comments(url)
+        # stealthy-fetch, html format, on the svc URL
+        assert sf.call_args.kwargs["mode"] == rs.scrapling_fetch.MODE_STEALTHY
+        assert sf.call_args.kwargs["fmt"] == "html"
+        assert "/svc/shreddit/comments/" in sf.call_args[0][0]
+        assert [c["score"] for c in out["top_comments"]] == [1136, 42]
+        assert out["num_comments"] == 2
+
+    def test_scrapling_not_called_when_keyless_succeeds(self):
+        # No regression: when the HTTP path works, the browser fallback is never
+        # invoked (it is slow and should stay a last resort).
+        url = "https://www.reddit.com/r/Rakuten/comments/1taeiw0/title/"
+        with mock.patch.object(rs.http, "get_text", return_value=_html()), \
+                mock.patch.object(rs.scrapling_fetch, "fetch") as sf:
+            out = rs.fetch_comments(url)
+        sf.assert_not_called()
+        assert len(out["top_comments"]) >= 1
+
+    def test_scrapling_absent_no_fallback(self):
+        # Keyless fails and scrapling is not installed: no fetch attempt, empty out.
+        url = "https://www.reddit.com/r/Rakuten/comments/1taeiw0/title/"
+        with mock.patch.object(rs.http, "reddit_keyless_get_text", return_value=None), \
+                mock.patch.object(rs.scrapling_fetch, "is_available", return_value=False), \
+                mock.patch.object(rs.scrapling_fetch, "fetch") as sf:
+            out = rs.fetch_comments(url)
+        sf.assert_not_called()
+        assert out["top_comments"] == [] and out["num_comments"] is None
 
 class TestEnrichmentBudget:
     """Busy topics enrich more threads and carry more comments per thread."""
