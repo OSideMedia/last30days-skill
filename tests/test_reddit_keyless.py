@@ -340,7 +340,7 @@ class TestSlotPriority:
         ]
         enriched_urls = []
 
-        def _capture(url):
+        def _capture(url, **kwargs):
             enriched_urls.append(url)
             return {"top_comments": [], "comment_insights": [], "num_comments": None}
 
@@ -369,7 +369,7 @@ class TestSlotPriority:
         ]
         enriched_urls = []
 
-        def _capture(url):
+        def _capture(url, **kwargs):
             enriched_urls.append(url)
             return {"top_comments": [], "comment_insights": [], "num_comments": None}
 
