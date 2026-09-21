@@ -526,6 +526,13 @@ def _open_secret_append(path: Path):
     return os.fdopen(fd, "a", encoding="utf-8")
 
 
+def _env_line_key(stripped: str) -> str:
+    """Return the key a stripped ``KEY=value`` line sets, as the loader reads it."""
+    from . import env as _env
+
+    return _env.env_line_key(stripped.split("=", 1)[0])
+
+
 def _replace_env_line(env_path: Path, content: str, key_name: str, value: str) -> bool:
     """Rewrite every ``key_name=`` line of ``content`` with ``value`` as a 0o600 secret.
 
@@ -540,11 +547,14 @@ def _replace_env_line(env_path: Path, content: str, key_name: str, value: str) -
         stripped = line.strip()
         is_key = (
             stripped and not stripped.startswith("#") and "=" in stripped
-            and stripped.split("=", 1)[0].strip() == key_name
+            and _env_line_key(stripped) == key_name
         )
         if is_key:
             if not replaced:
-                lines.append(new_line)
+                # Keep a hand-written ``export`` so a shell that sources the
+                # file still exports the rotated value.
+                exported = stripped.split("=", 1)[0].strip() != key_name
+                lines.append(f"export {new_line}" if exported else new_line)
                 replaced = True
             continue
         lines.append(line)
@@ -615,7 +625,7 @@ def write_setup_config(env_path: Path, from_browser: str | None = None) -> bool:
             for line in existing_content.splitlines():
                 stripped = line.strip()
                 if stripped and not stripped.startswith("#") and "=" in stripped:
-                    key = stripped.split("=", 1)[0].strip()
+                    key = _env_line_key(stripped)
                     existing_keys.add(key)
 
         lines_to_add = []
@@ -680,7 +690,7 @@ def write_api_key(
             for line in existing_content.splitlines():
                 stripped = line.strip()
                 if stripped and not stripped.startswith("#") and "=" in stripped:
-                    if stripped.split("=", 1)[0].strip() == key_name:
+                    if _env_line_key(stripped) == key_name:
                         if replace:
                             return _replace_env_line(env_path, existing_content, key_name, api_key)
                         return True  # Already configured; do not duplicate
