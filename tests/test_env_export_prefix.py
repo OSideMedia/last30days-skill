@@ -35,6 +35,8 @@ def test_export_prefix_combines_with_quotes_and_inline_comment(tmp_path):
     ("export=literal\n", "export"),
     ("export =literal\n", "export"),
     ("exporter=1\n", "exporter"),
+    ("EXPORT FOO=1\n", "EXPORT FOO"),
+    ("set FOO=1\n", "set FOO"),
 ])
 def test_export_is_only_a_prefix_when_a_key_follows(tmp_path, line, key):
     assert list(_load(tmp_path, line)) == [key]
@@ -58,6 +60,14 @@ def test_replace_rewrites_export_line_and_keeps_the_prefix(tmp_path):
     # prefix stays so a shell that sources the file still exports the key.
     assert env_path.read_text() == "export X_BEARER_TOKEN=fresh\nOTHER=1\n"
     assert env.load_env_file(env_path) == {"X_BEARER_TOKEN": "fresh", "OTHER": "1"}
+
+
+def test_replace_does_not_add_the_prefix_to_a_plain_line(tmp_path):
+    env_path = _write(tmp_path, "X_BEARER_TOKEN =stale\n")
+
+    setup_wizard.write_api_key(env_path, "fresh", key_name="X_BEARER_TOKEN", replace=True)
+
+    assert env_path.read_text() == "X_BEARER_TOKEN=fresh\n"
 
 
 def test_write_setup_config_sees_export_line_as_present(tmp_path):
