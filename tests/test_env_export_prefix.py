@@ -62,6 +62,20 @@ def test_replace_rewrites_export_line_and_keeps_the_prefix(tmp_path):
     assert env.load_env_file(env_path) == {"X_BEARER_TOKEN": "fresh", "OTHER": "1"}
 
 
+@pytest.mark.parametrize("text", [
+    "X_BEARER_TOKEN=old\nexport X_BEARER_TOKEN=older\n",
+    "export X_BEARER_TOKEN=old\nX_BEARER_TOKEN=older\n",
+])
+def test_replace_keeps_the_prefix_when_any_duplicate_is_exported(tmp_path, text):
+    env_path = _write(tmp_path, text)
+
+    setup_wizard.write_api_key(env_path, "fresh", key_name="X_BEARER_TOKEN", replace=True)
+
+    # The duplicates collapse to one line; dropping the prefix would stop a
+    # shell that sources the file from exporting the key it used to export.
+    assert env_path.read_text() == "export X_BEARER_TOKEN=fresh\n"
+
+
 def test_replace_does_not_add_the_prefix_to_a_plain_line(tmp_path):
     env_path = _write(tmp_path, "X_BEARER_TOKEN =stale\n")
 

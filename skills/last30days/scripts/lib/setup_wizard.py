@@ -540,21 +540,27 @@ def _replace_env_line(env_path: Path, content: str, key_name: str, value: str) -
     over the original, so the secret never has a readable window and a
     crash mid-write leaves the old file intact.
     """
-    new_line = f"{key_name}={_format_env_value(value)}"
-    lines = []
-    replaced = False
-    for line in content.splitlines():
-        stripped = line.strip()
-        is_key = (
+    def _is_key(stripped: str) -> bool:
+        return bool(
             stripped and not stripped.startswith("#") and "=" in stripped
             and _env_line_key(stripped) == key_name
         )
-        if is_key:
+
+    stripped_lines = [line.strip() for line in content.splitlines()]
+    # Keep a hand-written ``export`` -- on any of the duplicates being
+    # collapsed -- so a shell that sources the file still exports the key.
+    exported = any(
+        _is_key(s) and s.split("=", 1)[0].strip() != key_name for s in stripped_lines
+    )
+    new_line = f"{key_name}={_format_env_value(value)}"
+    if exported:
+        new_line = f"export {new_line}"
+    lines = []
+    replaced = False
+    for line, stripped in zip(content.splitlines(), stripped_lines):
+        if _is_key(stripped):
             if not replaced:
-                # Keep a hand-written ``export`` so a shell that sources the
-                # file still exports the rotated value.
-                exported = stripped.split("=", 1)[0].strip() != key_name
-                lines.append(f"export {new_line}" if exported else new_line)
+                lines.append(new_line)
                 replaced = True
             continue
         lines.append(line)
