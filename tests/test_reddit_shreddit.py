@@ -12,6 +12,21 @@ def _html():
     return FIXTURE.read_text(encoding="utf-8")
 
 
+# The partial after a DOM round-trip: HTML attribute names are case-insensitive,
+# so a serializer writes ``thingId`` as ``thingid``. Values keep their case.
+LOWERCASED_ATTR_HTML = """
+<shreddit-comment-tree-stats total-comments="2" sort="TOP"></shreddit-comment-tree-stats>
+<shreddit-comment created="2026-08-09T12:45:51+0000" author="AliceCooper" thingid="t1_aaa"
+  permalink="/r/videos/comments/x1/comment/aaa/" score="1136" depth="0">
+  <div id="t1_aaa-post-rtjson-content"><div><p>First body about $750 pending.</p></div></div>
+</shreddit-comment>
+<shreddit-comment created="2026-08-09T12:46:00+0000" author="bob" thingid="t1_bbb"
+  permalink="/r/videos/comments/x1/comment/bbb/" score="42" depth="0">
+  <div id="t1_bbb-post-rtjson-content"><div><p>Second body.</p></div></div>
+</shreddit-comment>
+"""
+
+
 class TestExtractPostRef:
     def test_extracts_sub_and_id(self):
         ref = rs.extract_post_ref("https://www.reddit.com/r/Rakuten/comments/1taeiw0/title/")
@@ -71,6 +86,11 @@ class TestParseComments:
         assert rs.parse_comments("") == []
         assert rs.parse_comments("<html>no comments here</html>") == []
 
+    def test_lowercased_attribute_names_parsed(self):
+        comments = rs.parse_comments(LOWERCASED_ATTR_HTML)
+        assert [c["score"] for c in comments] == [1136, 42]
+        assert comments[0]["author"] == "AliceCooper"  # values keep their case
+        assert "$750" in comments[0]["body"]
 
 class TestBotFilter:
     """Bot comments occupy top-comment slots without carrying community signal."""
